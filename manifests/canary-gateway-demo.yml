@@ -1,0 +1,162 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ns-canary
+  labels:
+    strategy: canary
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: gateway-class-canary
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  #parametersRef:
+  #  group: gateway.envoyproxy.io
+  #  kind: EnvoyProxy
+  #  name: nodeport-config
+  #  namespace: envoy-gateway-system
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gateway-canary
+  namespace: ns-canary
+spec:
+  gatewayClassName: gateway-class-canary
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8000
+      #allowedRoutes:
+      #  namespaces:
+      #    from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httproute-canary
+  namespace: ns-canary
+spec:
+  parentRefs:
+    - name: gateway-canary
+  hostnames:
+    - "www.example.com"
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: service-canary-stable
+          port: 8000
+          weight: 80
+        - group: ""
+          kind: Service
+          name: service-canary-test
+          port: 8000
+          weight: 20
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-canary-stable
+  namespace: ns-canary
+  labels:
+    app: demo-canary-gateway
+    #service: gateway-stable
+spec:
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  selector:
+    app: demo-canary-gateway
+    version: v1     # Routes traffic only to v1 pods
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-canary-test
+  namespace: ns-canary
+  labels:
+    app: demo-canary-gateway
+    #service: demo-canary-gateway-test
+spec:
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  selector:
+    app: demo-canary-gateway
+    version: v2     # Routes traffic only to v2 pods
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-canary-stable
+  namespace: ns-canary
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-canary-gateway
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: demo-canary-gateway
+        version: v1
+    spec:
+      containers:
+        - name: container-canary-stable
+          image: jdhet/fastapi-argo:shaf86cfbdf7fadb0896809044b5c598ed8e79b409f
+          ports:
+            - containerPort: 8000
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-canary-test
+  namespace: ns-canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-canary-gateway
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: demo-canary-gateway
+        version: v2
+    spec:
+      containers:
+        - name: container-canary-test
+          image: docker.io/jdhet/fastapi-argo:latest
+          ports:
+            - containerPort: 8000
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
