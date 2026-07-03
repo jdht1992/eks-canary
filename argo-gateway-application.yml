@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: "https://git@github.com:jdht1992/eks-canary.git"
     targetRevision: HEAD
-    path: .
+    path: manifests/canary-gateway-demo.yml
   destination:
     server: https://kubernetes.default.svc
     namespace: ns-canary
